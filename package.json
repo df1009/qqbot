@@ -4,6 +4,9 @@
   "type": "module",
   "main": "dist/index.js",
   "types": "dist/index.d.ts",
+  "clawdbot": {
+    "extensions": ["./index.ts"]
+  },
   "moltbot": {
     "extensions": ["./index.ts"]
   },
