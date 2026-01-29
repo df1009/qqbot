@@ -12,8 +12,10 @@ QQ 官方机器人 API 的 Moltbot 渠道插件，支持 C2C 私聊、群聊 @�
 
 ## 安装
 
+在插件目录下执行：
+
 ```bash
-moltbot plugins install /path/to/qqbot --force
+clawdbot plugins install .
 ```
 
 ## 配置
@@ -23,10 +25,32 @@ moltbot plugins install /path/to/qqbot --force
 1. 访问 [QQ 开放平台](https://q.qq.com/)
 2. 创建机器人应用
 3. 获取 `AppID` 和 `AppSecret`（ClientSecret）
+4. Token 格式为 `AppID:AppSecret`，例如 `102146862:Xjv7JVhu7KXkxANbp3HVjxCRgvAPeuAQ`
 
-### 2. 配置 clawdbot.json
+### 2. 添加配置
 
-编辑 `~/.clawdbot/clawdbot.json`：
+#### 方式一：交互式配置
+
+```bash
+clawdbot channels add
+# 选择 qqbot，按提示输入 Token
+```
+
+#### 方式二：命令行配置
+
+```bash
+clawdbot channels add --channel qqbot --token "AppID:AppSecret"
+```
+
+示例：
+
+```bash
+clawdbot channels add --channel qqbot --token "102146862:xxxxxxxx"
+```
+
+### 3. 手动编辑配置（可选）
+
+也可以直接编辑 `~/.clawdbot/clawdbot.json`：
 
 ```json
 {
@@ -41,9 +65,7 @@ moltbot plugins install /path/to/qqbot --force
 }
 ```
 
-### 3. 环境变量配置（可选）
-
-也可以通过环境变量配置凭证：
+### 4. 环境变量配置（可选）
 
 ```bash
 export QQBOT_APP_ID="你的AppID"
@@ -75,13 +97,13 @@ export QQBOT_CLIENT_SECRET="你的AppSecret"
 ### 启动
 
 ```bash
-moltbot gateway restart
+clawdbot gateway restart
 ```
 
 ### CLI 配置向导
 
 ```bash
-moltbot onboard
+clawdbot onboard
 # 选择 QQ Bot 进行交互式配置
 ```
 
