@@ -3,6 +3,7 @@ import type { ResolvedQQBotAccount } from "./types.js";
 import { listQQBotAccountIds, resolveQQBotAccount, applyQQBotAccountConfig } from "./config.js";
 import { sendText } from "./outbound.js";
 import { startGateway } from "./gateway.js";
+import { qqbotOnboardingAdapter } from "./onboarding.js";
 
 const DEFAULT_ACCOUNT_ID = "default";
 
@@ -23,6 +24,8 @@ export const qqbotPlugin: ChannelPlugin<ResolvedQQBotAccount> = {
     threads: false,
   },
   reload: { configPrefixes: ["channels.qqbot"] },
+  // CLI onboarding wizard
+  onboarding: qqbotOnboardingAdapter as any,
   config: {
     listAccountIds: (cfg) => listQQBotAccountIds(cfg),
     resolveAccount: (cfg, accountId) => resolveQQBotAccount(cfg, accountId),
