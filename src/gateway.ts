@@ -12,6 +12,7 @@ const INTENTS = {
 
 // 重连配置
 const RECONNECT_DELAYS = [1000, 2000, 5000, 10000, 30000, 60000]; // 递增延迟
+const RATE_LIMIT_DELAY = 60000; // 遇到频率限制时等待 60 秒
 const MAX_RECONNECT_ATTEMPTS = 100;
 const MAX_QUICK_DISCONNECT_COUNT = 3; // 连续快速断开次数阈值
 const QUICK_DISCONNECT_THRESHOLD = 5000; // 5秒内断开视为快速断开
@@ -69,13 +70,13 @@ export async function startGateway(ctx: GatewayContext): Promise<void> {
     return RECONNECT_DELAYS[idx];
   };
 
-  const scheduleReconnect = () => {
+  const scheduleReconnect = (customDelay?: number) => {
     if (isAborted || reconnectAttempts >= MAX_RECONNECT_ATTEMPTS) {
       log?.error(`[qqbot:${account.accountId}] Max reconnect attempts reached or aborted`);
       return;
     }
 
-    const delay = getReconnectDelay();
+    const delay = customDelay ?? getReconnectDelay();
     reconnectAttempts++;
     log?.info(`[qqbot:${account.accountId}] Reconnecting in ${delay}ms (attempt ${reconnectAttempts})`);
 
@@ -90,8 +91,8 @@ export async function startGateway(ctx: GatewayContext): Promise<void> {
     try {
       cleanup();
 
-      // 刷新 token（可能过期了）
-      clearTokenCache();
+      // 获取 token（使用缓存，除非已过期）
+      // 注意：不要每次都 clearTokenCache，否则会触发频率限制
       const accessToken = await getAccessToken(account.appId, account.clientSecret);
       const gatewayUrl = await getGatewayUrl(accessToken);
 
@@ -517,8 +518,16 @@ export async function startGateway(ctx: GatewayContext): Promise<void> {
       });
 
     } catch (err) {
+      const errMsg = String(err);
       log?.error(`[qqbot:${account.accountId}] Connection failed: ${err}`);
-      scheduleReconnect();
+      
+      // 如果是频率限制错误，等待更长时间
+      if (errMsg.includes("Too many requests") || errMsg.includes("100001")) {
+        log?.info(`[qqbot:${account.accountId}] Rate limited, waiting ${RATE_LIMIT_DELAY}ms before retry`);
+        scheduleReconnect(RATE_LIMIT_DELAY);
+      } else {
+        scheduleReconnect();
+      }
     }
   };
 
