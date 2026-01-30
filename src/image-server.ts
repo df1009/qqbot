@@ -313,6 +313,11 @@ export function saveImage(
   const ext = getExtFromMime(mimeType) || "png";
   const filename = `${imageId}.${ext}`;
 
+  // 确保存储目录存在
+  if (!fs.existsSync(currentConfig.storageDir)) {
+    fs.mkdirSync(currentConfig.storageDir, { recursive: true });
+  }
+
   // 保存文件
   const filePath = path.join(currentConfig.storageDir, filename);
   fs.writeFileSync(filePath, buffer);
