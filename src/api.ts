@@ -1,9 +1,83 @@
 /**
  * QQ Bot API 鉴权和请求封装
  */
+import net from "node:net";
+import tls from "node:tls";
+import https from "node:https";
 
 const API_BASE = "https://api.sgroup.qq.com";
 const TOKEN_URL = "https://bots.qq.com/app/getAppAccessToken";
+
+// SOCKS5 代理配置
+const SOCKS_HOST = process.env.QQBOT_SOCKS_HOST || "127.0.0.1";
+const SOCKS_PORT = parseInt(process.env.QQBOT_SOCKS_PORT || "1080", 10);
+const SOCKS_ENABLED = process.env.QQBOT_SOCKS_ENABLED !== "false"; // 默认启用
+const PROXY_DOMAINS = new Set(["api.sgroup.qq.com", "bots.qq.com"]);
+
+function socks5Handshake(targetHost: string, targetPort: number): Promise<net.Socket> {
+  return new Promise((resolve, reject) => {
+    const socket = net.connect(SOCKS_PORT, SOCKS_HOST);
+    let buffer = Buffer.alloc(0);
+    let step = 0;
+    socket.once("connect", () => { socket.write(Buffer.from([0x05, 0x01, 0x00])); });
+    socket.on("data", function onData(chunk: Buffer) {
+      buffer = Buffer.concat([buffer, chunk]);
+      if (step === 0 && buffer.length >= 2) {
+        if (buffer[0] !== 0x05 || buffer[1] !== 0x00) { socket.removeListener("data", onData); reject(new Error("SOCKS5 auth failed")); socket.destroy(); return; }
+        buffer = buffer.slice(2);
+        const hostBuf = Buffer.from(targetHost);
+        const req = Buffer.alloc(7 + hostBuf.length);
+        req[0] = 0x05; req[1] = 0x01; req[2] = 0x00; req[3] = 0x03; req[4] = hostBuf.length;
+        hostBuf.copy(req, 5); req.writeUInt16BE(targetPort, 5 + hostBuf.length);
+        socket.write(req); step = 1;
+      }
+      if (step === 1 && buffer.length >= 10) {
+        if (buffer[0] !== 0x05 || buffer[1] !== 0x00) { socket.removeListener("data", onData); reject(new Error("SOCKS5 connect failed: " + buffer[1])); socket.destroy(); return; }
+        socket.removeListener("data", onData); resolve(socket);
+      }
+    });
+    socket.on("error", reject);
+    socket.setTimeout(15000, () => { reject(new Error("SOCKS5 timeout")); socket.destroy(); });
+  });
+}
+
+async function proxiedFetch(url: string, options?: RequestInit): Promise<Response> {
+  const parsed = new URL(url);
+  if (!SOCKS_ENABLED || !PROXY_DOMAINS.has(parsed.hostname)) return fetch(url, options);
+  console.log(`[qqbot-socks] Proxying: ${parsed.hostname}${parsed.pathname}`);
+  const port = parseInt(parsed.port || "443", 10);
+  const rawSocket = await socks5Handshake(parsed.hostname, port);
+  const headers: Record<string, string> = {};
+  if (options?.headers) {
+    if (options.headers instanceof Headers) { options.headers.forEach((v, k) => { headers[k] = v; }); }
+    else if (typeof options.headers === "object") { Object.assign(headers, options.headers); }
+  }
+  return new Promise((resolve, reject) => {
+    const req = https.request({
+      hostname: parsed.hostname, path: parsed.pathname + parsed.search,
+      method: options?.method || "GET", headers,
+      createConnection: () => tls.connect({ socket: rawSocket, servername: parsed.hostname }),
+    }, (res) => {
+      const chunks: Buffer[] = [];
+      res.on("data", (c: Buffer) => chunks.push(c));
+      res.on("end", () => {
+        const body = Buffer.concat(chunks);
+        const rh = new Headers();
+        for (const [k, v] of Object.entries(res.headers)) {
+          if (v) { const vals = Array.isArray(v) ? v : [v]; for (const val of vals) rh.append(k, val); }
+        }
+        resolve(new Response(body, { status: res.statusCode || 200, statusText: res.statusMessage || "", headers: rh }));
+      });
+    });
+    req.on("error", reject);
+    if (options?.body) req.write(options.body);
+    req.end();
+  });
+}
+
+if (SOCKS_ENABLED) {
+  console.log(`[qqbot-socks] SOCKS5 proxy enabled: ${SOCKS_HOST}:${SOCKS_PORT}, domains: ${[...PROXY_DOMAINS].join(", ")}`);
+}
 
 // 运行时配置
 let currentMarkdownSupport = false;
@@ -73,7 +147,7 @@ async function doFetchToken(appId: string, clientSecret: string): Promise<string
 
   let response: Response;
   try {
-    response = await fetch(TOKEN_URL, {
+    response = await proxiedFetch(TOKEN_URL, {
       method: "POST",
       headers: requestHeaders,
       body: JSON.stringify(requestBody),
@@ -202,7 +276,7 @@ export async function apiRequest<T = unknown>(
 
   let res: Response;
   try {
-    res = await fetch(url, options);
+    res = await proxiedFetch(url, options);
   } catch (err) {
     console.error(`[qqbot-api] <<< Network error:`, err);
     throw new Error(`Network error [${path}]: ${err instanceof Error ? err.message : String(err)}`);

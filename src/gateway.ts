@@ -1,4 +1,5 @@
 import WebSocket from "ws";
+import { SocksProxyAgent } from "socks-proxy-agent";
 import path from "node:path";
 import * as fs from "node:fs";
 import type { ResolvedQQBotAccount, WSPayload, C2CMessageEvent, GuildMessageEvent, GroupMessageEvent } from "./types.js";
@@ -407,7 +408,15 @@ export async function startGateway(ctx: GatewayContext): Promise<void> {
 
       log?.info(`[qqbot:${account.accountId}] Connecting to ${gatewayUrl}`);
 
-      const ws = new WebSocket(gatewayUrl);
+      const socksEnabled = process.env.QQBOT_SOCKS_ENABLED !== "false";
+      const socksHost = process.env.QQBOT_SOCKS_HOST || "127.0.0.1";
+      const socksPort = process.env.QQBOT_SOCKS_PORT || "1080";
+      const wsOptions: WebSocket.ClientOptions = {};
+      if (socksEnabled) {
+        wsOptions.agent = new SocksProxyAgent(`socks5://${socksHost}:${socksPort}`);
+        log?.info(`[qqbot:${account.accountId}] Using SOCKS5 proxy ${socksHost}:${socksPort} for WebSocket`);
+      }
+      const ws = new WebSocket(gatewayUrl, wsOptions);
       currentWs = ws;
 
       const pluginRuntime = getQQBotRuntime();
